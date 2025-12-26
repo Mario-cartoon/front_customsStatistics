@@ -1,28 +1,38 @@
-name: Build, Test & Deploy
-
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
 
+
 jobs:
+# название для Workflow
   build-and-test:
+  # на какой операционной системе и какой версии будет выполняться рабочий процес
     runs-on: ubuntu-latest
-    # Запускается при push и PR
+     # шаги, которые будут выполнены в рамках задачи
     steps:
+     # клонирует репозиторий в ранер, чтобы иметь доступ к исх.коду проекта 
       - name: Checkout code
         uses: actions/checkout@v4
+    # устанавливет ноду
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+    # устанавливет зависимоти
       - name: Install dependencies
         run: npm ci
+
+    # собирает проект
       - name: Build project
         run: npm run build
+
+    # запускаюи тесты
       - name: Run unit tests
         run: npm run test:unit
+
+    # сохраняет папку dist результат сборки  как артефакт
       - name: Upload dist as artifact
         uses: actions/upload-artifact@v4
         with:
@@ -30,23 +40,29 @@ jobs:
           path: dist/
           retention-days: 1
 
+# название для Workflow
   generate-sbom:
     runs-on: ubuntu-latest
-    # Запускается ТОЛЬКО при создании/обновлении PR
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request'  # Только для pull_request
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20.x"
+
       - name: Install dependencies
         run: npm ci
+
       - name: Install CycloneDX CLI
         run: npm install -g @cyclonedx/cyclonedx-cli
+
       - name: Generate SBOM (CycloneDX JSON)
         run: cyclonedx-npm --output-file bom.json
+
       - name: Upload SBOM as artifact
         uses: actions/upload-artifact@v4
         with:
@@ -54,25 +70,32 @@ jobs:
           path: bom.json
           retention-days: 7
 
+# название для Workflow
   security-analysis:
     runs-on: ubuntu-latest
+
+# только после сбом
     needs: generate-sbom
-    # Запускается ТОЛЬКО при PR
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request'   
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20.x"
+
       - name: Install dependencies
         run: npm ci
+
       - name: Download SBOM
         uses: actions/download-artifact@v4
         with:
           name: sbom
           path: .
+
       - name: Run Dependency-Check (OWASP)
         uses: jeremylong/DependencyCheck-Action@main
         with:
@@ -80,24 +103,28 @@ jobs:
           scan: "."
           out: "reports"
           format: "HTML"
+
       - name: Upload security reports
         uses: actions/upload-artifact@v4
         with:
           name: security-report
           path: reports/
+# неделю хранимс
           retention-days: 7
-
+# название для Workflow
   deploy:
+  # зависимость от другой задачи необходимо чтобы сначала собрались тесты и собрался проект
     needs: build-and-test
     runs-on: ubuntu-latest
-    # Запускается ТОЛЬКО при push в main (не при PR!)
-    if: github.event_name == 'push'
+     # шаги, которые будут выполнены в рамках задачи
     steps:
+    # скачивает артифакты чтобы получить результат из другой задачи
       - name: Download dist artifact
         uses: actions/download-artifact@v4
         with:
           name: dist
           path: ./dist
+# поодключаемся к серверу по SSH и развертывает приложение
       - name: Deploy to remote server via SSH
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -106,8 +133,8 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
           script: |
-            DEPLOY_PATH="/var/www/myapp"
-            mkdir -p "$DEPLOY_PATH"
-            rm -rf "$DEPLOY_PATH"/*
-            cp -r ./dist/* "$DEPLOY_PATH"/
-            echo "✅ "
+            DEPLOY_PATH="/var/www/myapp"  # путь для деплоя 
+            mkdir -p "$DEPLOY_PATH"  # создать папку если нет
+            rm -rf "$DEPLOY_PATH"/* # ччистить старые файлы
+            cp -r ./dist/* "$DEPLOY_PATH"/  # скопировать новые файлы
+            echo "✅"  # если все ок то ок
