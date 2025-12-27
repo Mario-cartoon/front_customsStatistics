@@ -39,8 +39,7 @@ jobs:
           name: dist
           path: dist/
           retention-days: 1
-
-# название для Workflow
+ 
   generate-sbom:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'  # Только для pull_request
@@ -69,49 +68,50 @@ jobs:
           name: sbom
           path: bom.json
           retention-days: 7
-
-# название для Workflow
+ 
   security-analysis:
     runs-on: ubuntu-latest
-
-# только после сбом
     needs: generate-sbom
-    if: github.event_name == 'pull_request'   
-
+    if: github.event_name == 'pull_request'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20.x"
-
+          node-version: '20'
       - name: Install dependencies
         run: npm ci
-
       - name: Download SBOM
         uses: actions/download-artifact@v4
         with:
           name: sbom
           path: .
-
-      - name: Run Dependency-Check (OWASP)
+      - name: Run Dependency-Check
         uses: jeremylong/DependencyCheck-Action@main
         with:
           project: "FrontCustomsStatistics"
           scan: "."
           out: "reports"
           format: "HTML"
-
       - name: Upload security reports
         uses: actions/upload-artifact@v4
         with:
           name: security-report
           path: reports/
-# неделю хранимс
           retention-days: 7
-# название для Workflow
+      # Загрузка SBOM в Dependency-Track 
+      # Секреты не настроекны поэтому закоменчено
+      # - name: Upload SBOM to Dependency-Track
+      #   if: success() && github.event_name == 'pull_request'
+      #   run: |
+      #     curl -X "PUT" \
+      #       "${{ secrets.DT_URL }}/api/v1/bom" \
+      #       -H "X-API-Key: ${{ secrets.DT_API_KEY }}" \
+      #       -F "project=FrontCustomsStatistics" \
+      #       -F "projectVersion=${{ github.head_ref || github.ref_name }}" \
+      #       -F "bom=@bom.json"
+
   deploy:
   # зависимость от другой задачи необходимо чтобы сначала собрались тесты и собрался проект
     needs: build-and-test
